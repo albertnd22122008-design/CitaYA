@@ -58,7 +58,6 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
-import com.example.R
 import com.example.ui.components.CitaYaLogoMark
 import com.example.ui.theme.BorderLight
 import com.example.ui.theme.CobaltBlue
@@ -383,8 +382,14 @@ fun onGoogleSignInClicked(
     scope: CoroutineScope,
     onAuthCancelled: () -> Unit = {}
 ) {
+    // Se resuelve en tiempo de ejecución para que el proyecto compile aunque todavía
+    // no exista google-services.json (ese recurso lo genera el plugin de Google Services).
     val clientId = try {
-        context.getString(R.string.default_web_client_id)
+        val resId = context.resources.getIdentifier(
+            "default_web_client_id", "string", context.packageName
+        )
+        if (resId == 0) throw IllegalStateException("default_web_client_id no encontrado")
+        context.getString(resId)
     } catch (e: Exception) {
         onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
         return

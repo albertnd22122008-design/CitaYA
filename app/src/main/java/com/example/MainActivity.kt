@@ -42,12 +42,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.CitaYaRepository
+import com.example.data.StripePaymentService
 import com.example.ui.components.AppTab
 import com.example.ui.components.BottomCapsuleNavigation
 import com.example.ui.screens.AuthScreen
 import com.example.ui.screens.CrmScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.InventarioScreen
+import com.example.ui.screens.MenuInicioScreen
 import com.example.ui.screens.ModoClienteScreen
 import com.example.ui.screens.OperacionesScreen
 import com.example.ui.screens.PanelScreen
@@ -61,11 +63,18 @@ import com.example.ui.theme.TextDark
 import com.example.ui.theme.TextLight
 import com.example.ui.theme.TextMuted
 import com.google.firebase.auth.FirebaseAuth
+import com.stripe.android.PaymentConfiguration
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        // Stripe usa SOLO la clave pública en la app (la secreta vive en el backend).
+        try {
+            PaymentConfiguration.init(applicationContext, StripePaymentService.publishableKey)
+        } catch (_: Exception) {
+        }
         val repository = CitaYaRepository.getInstance(this)
 
         setContent {
@@ -77,6 +86,7 @@ class MainActivity : ComponentActivity() {
 }
 
 enum class RootScreen {
+    MENU,
     AUTH,
     CLIENTE,
     REGISTRO_NEGOCIO,
@@ -86,12 +96,12 @@ enum class RootScreen {
 @Composable
 fun AppRootContent(repository: CitaYaRepository) {
     var currentUser by remember { mutableStateOf(FirebaseAuth.getInstance().currentUser) }
-    var currentScreen by remember { mutableStateOf(if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.AUTH) }
+    var currentScreen by remember { mutableStateOf(if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.MENU) }
 
     DisposableEffect(Unit) {
         val listener = FirebaseAuth.AuthStateListener { auth ->
             currentUser = auth.currentUser
-            if (auth.currentUser != null && currentScreen == RootScreen.AUTH) {
+            if (auth.currentUser != null && (currentScreen == RootScreen.MENU || currentScreen == RootScreen.AUTH)) {
                 currentScreen = RootScreen.MAIN_TABS
             }
         }
@@ -102,7 +112,21 @@ fun AppRootContent(repository: CitaYaRepository) {
     }
 
     when (currentScreen) {
+        RootScreen.MENU -> {
+            MenuInicioScreen(
+                onCliente = {
+                    currentScreen = RootScreen.CLIENTE
+                },
+                onNegocio = {
+                    currentScreen = RootScreen.AUTH
+                }
+            )
+        }
+
         RootScreen.AUTH -> {
+            BackHandler {
+                currentScreen = RootScreen.MENU
+            }
             AuthScreen(
                 onContinueAsClient = {
                     currentScreen = RootScreen.CLIENTE
@@ -119,19 +143,19 @@ fun AppRootContent(repository: CitaYaRepository) {
 
         RootScreen.CLIENTE -> {
             BackHandler {
-                currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.AUTH
+                currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.MENU
             }
             ModoClienteScreen(
                 repository = repository,
                 onVolverModoNegocio = {
-                    currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.AUTH
+                    currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.MENU
                 }
             )
         }
 
         RootScreen.REGISTRO_NEGOCIO -> {
             BackHandler {
-                currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.AUTH
+                currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.MENU
             }
             RegistroScreen(
                 repository = repository,
@@ -139,7 +163,7 @@ fun AppRootContent(repository: CitaYaRepository) {
                     currentScreen = RootScreen.MAIN_TABS
                 },
                 onVolver = {
-                    currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.AUTH
+                    currentScreen = if (currentUser != null) RootScreen.MAIN_TABS else RootScreen.MENU
                 }
             )
         }
@@ -157,7 +181,7 @@ fun AppRootContent(repository: CitaYaRepository) {
                     FirebaseAuth.getInstance().signOut()
                     currentUser = null
                     repository.limpiarDatosLocales()
-                    currentScreen = RootScreen.AUTH
+                    currentScreen = RootScreen.MENU
                 }
             )
         }

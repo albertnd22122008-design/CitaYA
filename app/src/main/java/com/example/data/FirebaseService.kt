@@ -150,6 +150,42 @@ class FirebaseService(
     }
 
     /**
+     * Activa un plan de pago (PRO / VIP) por 30 días adicionales tras confirmarse el pago.
+     */
+    suspend fun activarPlanSuscripcion(uid: String, plan: PlanType): Result<Unit> {
+        return try {
+            val docRef = firestore.collection("negocios").document(uid)
+            val docSnapshot = docRef.get().await()
+
+            val ahora = Timestamp.now()
+            val fechaFinActual = (docSnapshot.get("fechaVencimientoPlan") as? Timestamp)?.toDate()?.time
+                ?: (docSnapshot.get("fechaFinPrueba") as? Timestamp)?.toDate()?.time
+                ?: ahora.toDate().time
+
+            val baseTime = if (fechaFinActual > ahora.toDate().time) fechaFinActual else ahora.toDate().time
+            val calendar = Calendar.getInstance().apply {
+                timeInMillis = baseTime
+                add(Calendar.DAY_OF_YEAR, 30)
+            }
+            val nuevaFechaFin = Timestamp(calendar.time)
+
+            val updates = hashMapOf<String, Any>(
+                "plan" to plan.name,
+                "fechaFinPrueba" to nuevaFechaFin,
+                "fechaVencimientoPlan" to nuevaFechaFin,
+                "activo" to true,
+                "fechaUltimoPago" to ahora
+            )
+
+            docRef.update(updates).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, "negocios/$uid")
+            Result.failure(e)
+        }
+    }
+
+    /**
      * Busca un negocio por su código único de 6 caracteres en Firestore.
      * Retorna null si no existe ningún negocio con ese código (Cero invención de datos).
      */
@@ -436,6 +472,98 @@ class FirebaseService(
             Result.success(Unit)
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.WRITE, "negocios/$negocioId/inventario/${prod.id}")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Actualiza métricas a nivel de negocio (ingresos, balance, ausencias, etc.)
+     * en el documento raíz del negocio.
+     */
+    suspend fun actualizarMetricasNegocio(negocioId: String, updates: Map<String, Any>): Result<Unit> {
+        return try {
+            firestore.collection("negocios").document(negocioId).update(updates).await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, "negocios/$negocioId")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Carga las fichas CRM de clientes del negocio desde Firestore.
+     */
+    suspend fun cargarClientes(negocioId: String): List<Cliente> {
+        return try {
+            val snapshot = firestore.collection("negocios")
+                .document(negocioId)
+                .collection("clientes")
+                .get()
+                .await()
+
+            snapshot.documents.mapNotNull { doc ->
+                val id = doc.id
+                val nombre = doc.getString("nombre") ?: return@mapNotNull null
+                val correo = doc.getString("correo") ?: ""
+                val telefono = doc.getString("telefono") ?: ""
+                val categoriaStr = doc.getString("categoria") ?: CategoriaCliente.NUEVO.name
+                val categoria = try { CategoriaCliente.valueOf(categoriaStr) } catch (_: Exception) { CategoriaCliente.NUEVO }
+                val totalGastado = (doc.get("totalGastado") as? Number)?.toDouble() ?: 0.0
+                val ultimaVisita = doc.getString("ultimaVisita") ?: ""
+                val visitasCount = (doc.get("visitasCount") as? Number)?.toInt() ?: 0
+                val servicioFavorito = doc.getString("servicioFavorito") ?: "Corte & Barba"
+                val barberoFavorito = doc.getString("barberoFavorito") ?: ""
+                val notas = doc.getString("notas") ?: ""
+
+                Cliente(
+                    id = id,
+                    nombre = nombre,
+                    correo = correo,
+                    telefono = telefono,
+                    categoria = categoria,
+                    totalGastado = totalGastado,
+                    ultimaVisita = ultimaVisita,
+                    visitasCount = visitasCount,
+                    servicioFavorito = servicioFavorito,
+                    barberoFavorito = barberoFavorito,
+                    notas = notas
+                )
+            }
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.LIST, "negocios/$negocioId/clientes")
+            emptyList()
+        }
+    }
+
+    /**
+     * Crea o actualiza la ficha CRM de un cliente en Firestore.
+     */
+    suspend fun guardarCliente(negocioId: String, cliente: Cliente): Result<Unit> {
+        return try {
+            val data = hashMapOf<String, Any>(
+                "id" to cliente.id,
+                "negocioId" to negocioId,
+                "userId" to negocioId,
+                "nombre" to cliente.nombre,
+                "correo" to cliente.correo,
+                "telefono" to cliente.telefono,
+                "categoria" to cliente.categoria.name,
+                "totalGastado" to cliente.totalGastado,
+                "ultimaVisita" to cliente.ultimaVisita,
+                "visitasCount" to cliente.visitasCount,
+                "servicioFavorito" to cliente.servicioFavorito,
+                "barberoFavorito" to cliente.barberoFavorito,
+                "notas" to cliente.notas
+            )
+            firestore.collection("negocios")
+                .document(negocioId)
+                .collection("clientes")
+                .document(cliente.id)
+                .set(data, SetOptions.merge())
+                .await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, "negocios/$negocioId/clientes/${cliente.id}")
             Result.failure(e)
         }
     }

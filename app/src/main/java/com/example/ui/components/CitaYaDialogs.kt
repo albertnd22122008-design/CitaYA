@@ -440,55 +440,53 @@ fun PaywallDialog(
 
                 Spacer(modifier = Modifier.height(20.dp))
 
-                // Card Plan Pro
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onUpgrade(PlanType.PRO) },
-                    colors = CardDefaults.cardColors(containerColor = WarmSand),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Plan Pro CitaYa", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TextDark)
-                            Text("Citas ilimitadas • Hasta 4 barberos", fontSize = 11.sp, color = TextMuted)
+                // Planes disponibles (Gratis / Pro / VIP)
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    PlanType.planesDisponibles.forEach { plan ->
+                        val contenedor = when (plan) {
+                            PlanType.VIP -> ObsidianDeep
+                            PlanType.PRO -> CobaltBlueLight
+                            else -> WarmSand
                         }
-                        Text("RD$ 1,499/m", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = CobaltBlue)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Card Plan VIP
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onUpgrade(PlanType.VIP) },
-                    colors = CardDefaults.cardColors(containerColor = ObsidianDeep),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text("Plan VIP Completo", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("POPULAR", fontSize = 9.sp, color = GoldVip, fontWeight = FontWeight.Bold)
+                        val tituloColor = when (plan) {
+                            PlanType.VIP -> Color.White
+                            PlanType.PRO -> CobaltBlue
+                            else -> TextDark
+                        }
+                        val subColor = if (plan == PlanType.VIP) Color.White.copy(alpha = 0.7f) else TextMuted
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onUpgrade(plan) },
+                            colors = CardDefaults.cardColors(containerColor = contenedor),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(14.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(plan.label, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = tituloColor)
+                                        if (plan == PlanType.VIP) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("POPULAR", fontSize = 9.sp, color = GoldVip, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    Text(plan.descripcion, fontSize = 11.sp, color = subColor)
+                                }
+                                Text(
+                                    text = if (plan.precioMensualRd <= 0.0) "Gratis"
+                                    else "RD$ " + String.format("%,.0f", plan.precioMensualRd) + "/m",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 14.sp,
+                                    color = if (plan == PlanType.VIP) GoldVip else CobaltBlue
+                                )
                             }
-                            Text("Barberos ilimitados • Venta cruzada", fontSize = 11.sp, color = Color.White.copy(alpha = 0.7f))
                         }
-                        Text("RD$ 2,999/m", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GoldVip)
                     }
                 }
 
@@ -500,7 +498,7 @@ fun PaywallDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = SunsetOrange),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("Actualizar a Plan Pro", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Actualizar a Plan Pro (RD$ 1,000)", fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))

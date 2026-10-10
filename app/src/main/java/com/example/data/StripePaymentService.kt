@@ -1,17 +1,25 @@
 package com.example.data
 
-import android.content.Context
 import android.util.Log
+import com.example.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.FormBody
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+/**
+ * Integración de Stripe del lado cliente.
+ *
+ * IMPORTANTE: la app SOLO usa la clave PÚBLICA (pk_...). La clave SECRETA (sk_...) vive en el
+ * backend (Cloud Function) y jamás debe incluirse aquí ni en el repositorio.
+ * El backend devuelve un `clientSecret` con el que se inicializa PaymentSheet en Android.
+ */
 class StripePaymentService(
-    private val stripeSecretKey: String = "sk_test_51UOzQ5Hjl0tQSkyTcCwhIOqnRFXElOl8LRv52WaP1ze8RviXz6efx9Y13rXLLheldVh2QorPbTZY6vpIfdTM1dHT00BZedpd2h"
+    private val backendUrl: String = BuildConfig.STRIPE_BACKEND_URL
 ) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -19,60 +27,57 @@ class StripePaymentService(
         .build()
 
     /**
-     * Solicita la creación de un PaymentIntent para la suscripción VIP del negocio.
-     * Retorna el clientSecret necesario para inicializar PaymentSheet en Android.
+     * Solicita al backend la creación de un PaymentIntent para la suscripción VIP del negocio.
+     * El backend (con la clave secreta guardada como secreto) responde con el clientSecret.
      */
     suspend fun crearPaymentIntentSuscripcion(
         negocioId: String,
-        montoCentavos: Long = 2999L // $29.99 USD (~RD$ 1,750 - 2,999)
+        plan: String,
+        dias: Int = 30
     ): Result<String> {
         return withContext(Dispatchers.IO) {
             try {
-                val formBody = FormBody.Builder()
-                    .add("amount", montoCentavos.toString())
-                    .add("currency", "usd")
-                    .add("description", "CitaYa SaaS - Plan VIP Negocio ($negocioId)")
-                    .add("metadata[negocioId]", negocioId)
-                    .add("metadata[plan]", "VIP_ACTIVO")
-                    .add("metadata[dias]", "30")
-                    .add("payment_method_types[]", "card")
-                    .build()
+                val payload = JSONObject().apply {
+                    put("negocioId", negocioId)
+                    put("plan", plan)
+                    put("dias", dias)
+                }
+                val body = payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
 
                 val request = Request.Builder()
-                    .url("https://api.stripe.com/v1/payment_intents")
-                    .header("Authorization", "Bearer $stripeSecretKey")
-                    .post(formBody)
+                    .url(backendUrl)
+                    .post(body)
                     .build()
 
                 val response = client.newCall(request).execute()
                 val responseBody = response.body?.string().orEmpty()
 
                 if (response.isSuccessful) {
-                    val json = JSONObject(responseBody)
-                    val clientSecret = json.optString("client_secret")
+                    val clientSecret = JSONObject(responseBody).optString("clientSecret")
                     if (clientSecret.isNotBlank()) {
                         Result.success(clientSecret)
                     } else {
-                        Result.failure(Exception("client_secret no encontrado en la respuesta de Stripe"))
+                        Result.failure(Exception("clientSecret no encontrado en la respuesta del backend"))
                     }
                 } else {
                     val errorMsg = try {
-                        JSONObject(responseBody).optJSONObject("error")?.optString("message") ?: response.message
+                        JSONObject(responseBody).optString("error").ifBlank { response.message }
                     } catch (_: Exception) {
                         response.message
                     }
-                    Log.e("Stripe", "Error al crear PaymentIntent: $errorMsg")
+                    Log.e("Stripe", "Error del backend al crear PaymentIntent: $errorMsg")
                     Result.failure(Exception("Error de Stripe: $errorMsg"))
                 }
             } catch (e: Exception) {
-                Log.e("Stripe", "Fallo de red al conectar con Stripe", e)
+                Log.e("Stripe", "Fallo de red al conectar con el backend de pagos", e)
                 Result.failure(e)
             }
         }
     }
 
     companion object {
-        const val STRIPE_PUBLISHABLE_KEY = "sk_test_51UOzQ5Hjl0tQSkyTcCwhIOqnRFXElOl8LRv52WaP1ze8RviXz6efx9Y13rXLLheldVh2QorPbTZY6vpIfdTM1dHT00BZedpd2h"
+        /** Clave pública de Stripe (segura para el cliente). Se inyecta desde .env -> BuildConfig. */
+        val publishableKey: String get() = BuildConfig.STRIPE_PUBLISHABLE_KEY
 
         @Volatile
         private var instance: StripePaymentService? = null

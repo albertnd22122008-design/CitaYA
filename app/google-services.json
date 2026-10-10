@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "407646410372",
+    "project_id": "citaya-eab2c",
+    "storage_bucket": "citaya-eab2c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:407646410372:android:4cddb30d683b4d707d54d1",
+        "android_client_info": {
+          "package_name": "com.aistudio.citaya.rdzxp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3cgFxQi6laaQ2IbBXI_mFvl9Vsp_H-Mo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

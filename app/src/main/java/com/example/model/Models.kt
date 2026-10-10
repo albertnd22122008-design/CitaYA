@@ -1,11 +1,31 @@
 package com.example.model
 
-enum class PlanType(val label: String, val precioMensualRd: Double, val limiteCitas: Int?) {
-    VIP_TRIAL("VIP Prueba (30 días)", 0.0, null),
-    VIP_ACTIVO("Plan VIP Activo", 2999.0, null),
-    GRATIS("Plan Gratis", 0.0, 20),
-    PRO("Plan Pro", 1499.0, null),
-    VIP("Plan VIP", 2999.0, null)
+enum class PlanType(
+    val label: String,
+    val precioMensualRd: Double,
+    val limiteCitas: Int?,
+    val descripcion: String,
+    val stripePlanId: String
+) {
+    VIP_TRIAL("VIP Prueba (30 días)", 0.0, null, "Prueba gratis de 30 días con todo incluido", ""),
+    VIP_ACTIVO("Plan VIP Activo", 2500.0, null, "Barberos ilimitados y venta cruzada", "VIP"),
+    GRATIS("Plan Gratis (Básico)", 0.0, 20, "Hasta 20 citas al mes", ""),
+    PRO("Plan Pro", 1000.0, null, "Citas ilimitadas para tu negocio", "PRO"),
+    VIP("Plan VIP", 2500.0, null, "Todo ilimitado + venta cruzada", "VIP");
+
+    /** true si el plan requiere pago (checkout con Stripe). */
+    val esPago: Boolean get() = precioMensualRd > 0.0
+
+    companion object {
+        /** Los 3 planes que se muestran al usuario. */
+        val planesDisponibles: List<PlanType> = listOf(PlanType.GRATIS, PlanType.PRO, PlanType.VIP)
+
+        /** Planes que requieren pago con Stripe. */
+        val planesDePago: List<PlanType> = listOf(PlanType.PRO, PlanType.VIP)
+
+        fun desdeStripeId(id: String?): PlanType? =
+            PlanType.entries.firstOrNull { it.stripePlanId.isNotBlank() && it.stripePlanId.equals(id, ignoreCase = true) }
+    }
 }
 
 enum class EstadoCita(val label: String) {

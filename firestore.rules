@@ -6,39 +6,53 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    function isBusinessOwner(data) {
+    // El documento del negocio usa como id el UID del dueño.
+    // Se considera dueño al UID que coincide con el id del documento o con su campo userId/uid.
+    function isOwner(negocioId) {
       return isAuthenticated() && (
-        (('userId' in data) && request.auth.uid == data.userId) ||
-        (('uid' in data) && request.auth.uid == data.uid)
+        request.auth.uid == negocioId ||
+        request.auth.uid == get(/databases/$(database)/documents/negocios/$(negocioId)).data.userId
       );
     }
 
     match /negocios/{negocioId} {
-      // Clientes pueden leer para buscar por código único y ver datos del local
+      // Lectura pública: los clientes necesitan buscar el local por su código único.
       allow read: if true;
-      allow create: if isAuthenticated() && isBusinessOwner(request.resource.data);
-      allow update, delete: if isAuthenticated() && isBusinessOwner(resource.data);
+      // Solo un usuario autenticado puede crear su propio negocio.
+      allow create: if isAuthenticated() && (
+        request.auth.uid == negocioId ||
+        (('userId' in request.resource.data) && request.auth.uid == request.resource.data.userId)
+      );
+      // Solo el dueño puede modificar o borrar su negocio.
+      allow update, delete: if isAuthenticated() && (
+        (('userId' in resource.data) && request.auth.uid == resource.data.userId) ||
+        (('uid' in resource.data) && request.auth.uid == resource.data.uid)
+      );
 
       match /citas/{citaId} {
-        // Clientes y dueños pueden ver y registrar citas
+        // Los clientes (sin sesión) pueden ver y agendar citas desde su celular.
         allow read: if true;
         allow create: if true;
-        allow update, delete: if isAuthenticated();
+        // Solo el dueño del negocio puede cambiar el estado o borrar la cita.
+        allow update, delete: if isOwner(negocioId);
       }
 
       match /barberos/{barberoId} {
-        // Clientes pueden consultar barberos para reservar; el dueño puede gestionarlos
+        // Lectura pública para que el cliente vea el equipo disponible.
         allow read: if true;
-        allow create, update, delete: if isAuthenticated();
+        // Solo el dueño administra su equipo.
+        allow create, update, delete: if isOwner(negocioId);
       }
 
       match /clientes/{clienteId} {
-        allow read, write: if isAuthenticated();
+        // Datos CRM: privados del negocio.
+        allow read, write: if isOwner(negocioId);
       }
 
       match /inventario/{productoId} {
         allow read: if true;
-        allow write: if isAuthenticated();
+        // Solo el dueño administra su inventario.
+        allow create, update, delete: if isOwner(negocioId);
       }
     }
   }

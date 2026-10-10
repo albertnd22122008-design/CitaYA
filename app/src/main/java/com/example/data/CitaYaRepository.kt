@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -54,6 +55,11 @@ class CitaYaRepository(
 
     private val repositoryScope = CoroutineScope(Dispatchers.IO)
     val firebaseService by lazy { FirebaseService(firestore) }
+    val stripeService by lazy { StripePaymentService.getInstance() }
+
+    /** UID del negocio actual (documento raíz "negocios/{uid}"). */
+    private fun idNegocioActual(): String? =
+        _business.value.id.ifBlank { auth.currentUser?.uid }
 
     private val _modoApp = MutableStateFlow(ModoApp.NEGOCIO)
     val modoApp: StateFlow<ModoApp> = _modoApp.asStateFlow()
@@ -113,6 +119,10 @@ class CitaYaRepository(
                 // Cargar inventario real
                 val realInventario = firebaseService.cargarInventario(uid)
                 _inventario.value = realInventario
+
+                // Cargar fichas CRM reales de clientes
+                val realClientes = firebaseService.cargarClientes(uid)
+                _clientes.value = realClientes
 
                 actualizarMetricasCalculadas(realCitas)
             }
@@ -209,7 +219,7 @@ class CitaYaRepository(
             }
         }
 
-        val bizId = _business.value.id.ifBlank { auth.currentUser?.uid }
+        val bizId = idNegocioActual()
         if (!bizId.isNullOrBlank()) {
             repositoryScope.launch {
                 firebaseService.actualizarEstadoCita(
@@ -219,9 +229,19 @@ class CitaYaRepository(
                     totalCobrado = nuevoTotal,
                     ventasAdicionales = ventasAdicionales
                 )
-                firestore.collection("negocios").document(bizId).update(
+                // Persistir el stock reducido por la venta cruzada
+                if (ventasAdicionales.isNotEmpty()) {
+                    _inventario.value.forEach { p ->
+                        val vendidas = ventasAdicionales.filter { it.productoNombre == p.nombre }.sumOf { it.cantidad }
+                        if (vendidas > 0) firebaseService.guardarProducto(bizId, p)
+                    }
+                }
+                firebaseService.actualizarMetricasNegocio(
+                    bizId,
                     mapOf(
                         "ingresosHoy" to _business.value.ingresosHoy,
+                        "balanceNeto" to _business.value.balanceNeto,
+                        "dineroRecibido" to _business.value.dineroRecibido,
                         "citasUsadasMes" to FieldValue.increment(1)
                     )
                 )
@@ -241,7 +261,7 @@ class CitaYaRepository(
             biz.copy(tasaAusencias = (biz.tasaAusencias + 1).coerceAtMost(100))
         }
 
-        val bizId = _business.value.id.ifBlank { auth.currentUser?.uid }
+        val bizId = idNegocioActual()
         if (!bizId.isNullOrBlank()) {
             repositoryScope.launch {
                 firebaseService.actualizarEstadoCita(
@@ -249,6 +269,10 @@ class CitaYaRepository(
                     citaId = citaId,
                     estado = EstadoCita.NO_VINO,
                     totalCobrado = 0.0
+                )
+                firebaseService.actualizarMetricasNegocio(
+                    bizId,
+                    mapOf("tasaAusencias" to _business.value.tasaAusencias)
                 )
             }
         }
@@ -298,7 +322,7 @@ class CitaYaRepository(
 
         // Agregar también al CRM si no existe
         val clienteExistente = _clientes.value.find { it.nombre.equals(clienteNombre, ignoreCase = true) }
-        if (clienteExistente == null) {
+        val clienteParaGuardar = if (clienteExistente == null) {
             val nuevoCliente = Cliente(
                 id = "cl_${System.currentTimeMillis()}",
                 nombre = nuevaCita.clienteNombre,
@@ -312,12 +336,14 @@ class CitaYaRepository(
                 barberoFavorito = barberoNombre
             )
             _clientes.update { listOf(nuevoCliente) + it }
-        }
+            nuevoCliente
+        } else null
 
-        val bizId = _business.value.id.ifBlank { auth.currentUser?.uid }
+        val bizId = idNegocioActual()
         if (!bizId.isNullOrBlank()) {
             repositoryScope.launch {
                 firebaseService.guardarCita(bizId, nuevaCita)
+                clienteParaGuardar?.let { firebaseService.guardarCliente(bizId, it) }
             }
         }
 
@@ -449,9 +475,13 @@ class CitaYaRepository(
 
     fun actualizarPlan(nuevoPlan: PlanType) {
         _business.update { it.copy(plan = nuevoPlan) }
-        auth.currentUser?.uid?.let { uid ->
-            val docRef = firestore.collection("negocios").document(uid)
-            docRef.update("plan", nuevoPlan.name)
+        val uid = idNegocioActual() ?: return
+        repositoryScope.launch {
+            try {
+                firestore.collection("negocios").document(uid).update("plan", nuevoPlan.name).await()
+            } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.UPDATE, "negocios/$uid")
+            }
         }
     }
 
@@ -509,7 +539,22 @@ class CitaYaRepository(
         _business.update { biz ->
             biz.copy(
                 ingresosHoy = biz.ingresosHoy + totalVenta,
-                balanceNeto = biz.balanceNeto + totalVenta
+                balanceNeto = biz.balanceNeto + totalVenta,
+                dineroRecibido = biz.dineroRecibido + totalVenta
+            )
+        }
+
+        val bizId = idNegocioActual() ?: return
+        val actualizado = _inventario.value.find { it.id == productoId } ?: return
+        repositoryScope.launch {
+            firebaseService.guardarProducto(bizId, actualizado)
+            firebaseService.actualizarMetricasNegocio(
+                bizId,
+                mapOf(
+                    "ingresosHoy" to _business.value.ingresosHoy,
+                    "balanceNeto" to _business.value.balanceNeto,
+                    "dineroRecibido" to _business.value.dineroRecibido
+                )
             )
         }
     }
@@ -519,6 +564,11 @@ class CitaYaRepository(
             list.map {
                 if (it.id == productoId) it.copy(stock = it.stock + cantidad) else it
             }
+        }
+        val bizId = idNegocioActual() ?: return
+        val actualizado = _inventario.value.find { it.id == productoId } ?: return
+        repositoryScope.launch {
+            firebaseService.guardarProducto(bizId, actualizado)
         }
     }
 
@@ -533,6 +583,115 @@ class CitaYaRepository(
             }
             context.startActivity(intent)
         } catch (_: Exception) {
+        }
+    }
+
+    /**
+     * Agrega o actualiza una ficha CRM de cliente y la persiste en Firestore.
+     */
+    fun agregarCliente(
+        nombre: String,
+        correo: String = "",
+        telefono: String = "",
+        categoria: CategoriaCliente = CategoriaCliente.NUEVO
+    ) {
+        if (nombre.isBlank()) return
+        val existente = _clientes.value.find { it.nombre.equals(nombre, ignoreCase = true) }
+        val cliente = if (existente != null) {
+            existente.copy(
+                correo = correo.ifBlank { existente.correo },
+                telefono = telefono.ifBlank { existente.telefono },
+                categoria = categoria
+            )
+        } else {
+            Cliente(
+                id = "cl_${System.currentTimeMillis()}",
+                nombre = nombre,
+                correo = correo,
+                telefono = telefono,
+                categoria = categoria,
+                totalGastado = 0.0,
+                ultimaVisita = "Hoy",
+                visitasCount = 1
+            )
+        }
+        _clientes.update { list ->
+            if (existente != null) list.map { if (it.id == existente.id) cliente else it }
+            else listOf(cliente) + list
+        }
+        val bizId = idNegocioActual() ?: return
+        repositoryScope.launch { firebaseService.guardarCliente(bizId, cliente) }
+    }
+
+    /**
+     * Crea la cuenta real de negocio con correo y contraseña (Firebase Auth) y
+     * luego inicializa el documento del negocio con el plan VIP_TRIAL de 30 días.
+     */
+    suspend fun registrarNegocioConCorreo(
+        nombre: String,
+        telefono: String,
+        correo: String,
+        contrasena: String,
+        categoria: String = "Barbería",
+        ciudad: String = "Santo Domingo",
+        direccion: String = "Distrito Nacional"
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val authResult = auth.createUserWithEmailAndPassword(correo.trim(), contrasena).await()
+            val uid = authResult.user?.uid ?: auth.currentUser?.uid
+                ?: return@withContext Result.failure(Exception("No se pudo crear la cuenta del negocio"))
+            val codigo = "CY" + (1000..9999).random()
+            val res = firebaseService.inicializarNegocioVIP(
+                uid = uid,
+                nombreNegocio = nombre.ifBlank { "Mi Negocio" },
+                telefono = telefono.ifBlank { "809-555-0000" },
+                email = correo,
+                codigoUnico = codigo,
+                categoria = categoria,
+                ciudad = ciudad,
+                direccion = direccion
+            )
+            if (res.isSuccess) {
+                res.getOrNull()?.let { negocio -> _business.value = negocio }
+                _barberos.value = emptyList()
+                _citas.value = emptyList()
+                _clientes.value = emptyList()
+                _inventario.value = emptyList()
+                _flujoCaja.value = emptyList()
+                Result.success(Unit)
+            } else {
+                Result.failure(res.exceptionOrNull() ?: Exception("No se pudo registrar el negocio"))
+            }
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, "negocios")
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Inicia el cobro con Stripe para un plan de pago (PRO / VIP).
+     * Devuelve el clientSecret que se usa para abrir PaymentSheet en la app.
+     */
+    suspend fun iniciarCheckoutPlan(plan: PlanType): Result<String> {
+        val negocioId = idNegocioActual()
+            ?: return Result.failure(Exception("Debes iniciar sesión para cambiar de plan"))
+        val planId = plan.stripePlanId.ifBlank { plan.name }
+        return stripeService.crearPaymentIntentSuscripcion(negocioId = negocioId, plan = planId)
+    }
+
+    /**
+     * Confirma localmente y en Firestore el plan adquirido.
+     * Para planes de pago extiende 30 días; para el plan gratis solo fija el plan.
+     */
+    fun confirmarPlanPagado(plan: PlanType) {
+        _business.update { it.copy(plan = plan) }
+        val uid = idNegocioActual() ?: return
+        repositoryScope.launch {
+            if (plan.esPago) {
+                firebaseService.activarPlanSuscripcion(uid, plan)
+            } else {
+                firebaseService.actualizarMetricasNegocio(uid, mapOf("plan" to plan.name))
+            }
         }
     }
 

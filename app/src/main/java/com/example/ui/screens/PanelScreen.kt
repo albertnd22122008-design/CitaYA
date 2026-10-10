@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.content.Context
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,6 +45,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -80,6 +82,9 @@ import com.example.ui.theme.TextDark
 import com.example.ui.theme.TextMuted
 import com.example.ui.theme.WarmSand
 import com.example.ui.theme.WarmSandDarker
+import com.stripe.android.paymentsheet.PaymentSheet
+import com.stripe.android.paymentsheet.PaymentSheetResult
+import kotlinx.coroutines.launch
 
 @Composable
 fun PanelScreen(
@@ -103,6 +108,31 @@ fun PanelScreen(
     var showBusinessCodeDialog by remember { mutableStateOf(false) }
 
     val dateFilters = listOf("Mes", "Hoy", "Semana", "Semana +1", "Fecha")
+
+    val coroutineScope = rememberCoroutineScope()
+    val activity = context as? ComponentActivity
+    var planPendiente by remember { mutableStateOf<PlanType?>(null) }
+    val paymentSheet = remember(activity) {
+        activity?.let { act ->
+            PaymentSheet(act) { result ->
+                when (result) {
+                    PaymentSheetResult.Completed -> {
+                        planPendiente?.let { plan -> repository.confirmarPlanPagado(plan) }
+                        planPendiente = null
+                        paywallErrorMessage = null
+                    }
+                    PaymentSheetResult.Canceled -> {
+                        planPendiente = null
+                    }
+                    is PaymentSheetResult.Failed -> {
+                        paywallErrorMessage = "No se pudo completar el pago: " +
+                                (result.error.localizedMessage ?: "intenta de nuevo")
+                        planPendiente = null
+                    }
+                }
+            }
+        }
+    }
 
     val citasFiltradas = remember(citas, searchQuery, selectedDateFilter) {
         citas.filter { cita ->
@@ -473,8 +503,28 @@ fun PanelScreen(
                 mensaje = msg,
                 onDismiss = { paywallErrorMessage = null },
                 onUpgrade = { plan ->
-                    repository.actualizarPlan(plan)
-                    paywallErrorMessage = null
+                    if (!plan.esPago) {
+                        repository.actualizarPlan(plan)
+                        paywallErrorMessage = null
+                    } else {
+                        coroutineScope.launch {
+                            val res = repository.iniciarCheckoutPlan(plan)
+                            res.onSuccess { clientSecret ->
+                                planPendiente = plan
+                                val sheet = paymentSheet
+                                if (sheet == null) {
+                                    paywallErrorMessage = "El pago no está disponible en este dispositivo."
+                                } else {
+                                    sheet.presentWithPaymentIntent(
+                                        clientSecret,
+                                        PaymentSheet.Configuration(merchantDisplayName = "CitaYa")
+                                    )
+                                }
+                            }.onFailure { e ->
+                                paywallErrorMessage = e.localizedMessage ?: "No se pudo iniciar el pago."
+                            }
+                        }
+                    }
                 }
             )
         }
