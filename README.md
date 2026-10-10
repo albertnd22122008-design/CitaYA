@@ -20,22 +20,23 @@ finanzas, inventario y WhatsApp. App **Android nativa (Kotlin + Jetpack Compose)
 > El `gradlew` (Gradle wrapper) ya está incluido. Si usas la terminal:
 > `./gradlew assembleDebug`
 
-## ⚠️ PASO OBLIGATORIO: tu `google-services.json`
+## ✅ `google-services.json` (ya incluido)
 
-El archivo `app/google-services.json` que viene en el repo es un **PLACEHOLDER**:
-sirve para que el proyecto compile y abra la interfaz, pero **no conecta con ningún
-proyecto real** (login y datos no funcionarán hasta reemplazarlo).
+El repo ya trae el `google-services.json` **real** de tu proyecto
+**`citaya-eab2c`** (paquete `com.aistudio.citaya.rdzxp`), ubicado en
+`app/google-services.json`. No tienes que descargar nada más.
 
-Para que funcione de verdad:
+El plugin de Google Services está aplicado en `app/build.gradle.kts`
+(`id("com.google.gms.google-services")`) y las dependencias de Firebase usan el
+**BoM** (`implementation(platform(libs.firebase.bom))`), así que no se
+especifican versiones por librería.
 
-1. Entra a **Firebase Console** → tu proyecto (o crea uno).
-2. **Añadir app → Android**.
-3. Nombre de paquete exacto: **`com.aistudio.citaya.rdzxp`**
-4. Descarga `google-services.json` y **sobrescribe** `app/google-services.json`.
-5. En Firebase, crea la base de datos **Firestore**.
-   El proyecto usa el id de base `ai-studio-android-citaya-33a2da60-e489-4e40-a021-51be73924d12`
-   (está en `app/src/main/res/values/firebase_applet_config.xml`). Usa el proyecto
-   original o cambia ese id por el de tu nueva base.
+### Falta solo esto en Firebase Console
+1. **Firestore Database → Crear base de datos.** La app usa la base `(default)`
+   (definida en `app/src/main/res/values/firebase_applet_config.xml`).
+2. **Authentication → activar proveedor Google.** Para el login con Google hay
+   que registrar la **huella SHA-1** de tu app (Configuración del proyecto →
+   Agregar huella digital). El **Modo Cliente** (sin login) ya funciona sin esto.
 
 ## Pagos (opcional)
 
