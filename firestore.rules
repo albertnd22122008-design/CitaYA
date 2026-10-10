@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isBusinessOwner(data) {
+      return isAuthenticated() && (
+        (('userId' in data) && request.auth.uid == data.userId) ||
+        (('uid' in data) && request.auth.uid == data.uid)
+      );
+    }
+
+    match /negocios/{negocioId} {
+      // Clientes pueden leer para buscar por código único y ver datos del local
+      allow read: if true;
+      allow create: if isAuthenticated() && isBusinessOwner(request.resource.data);
+      allow update, delete: if isAuthenticated() && isBusinessOwner(resource.data);
+
+      match /citas/{citaId} {
+        // Clientes y dueños pueden ver y registrar citas
+        allow read: if true;
+        allow create: if true;
+        allow update, delete: if isAuthenticated();
+      }
+
+      match /barberos/{barberoId} {
+        // Clientes pueden consultar barberos para reservar; el dueño puede gestionarlos
+        allow read: if true;
+        allow create, update, delete: if isAuthenticated();
+      }
+
+      match /clientes/{clienteId} {
+        allow read, write: if isAuthenticated();
+      }
+
+      match /inventario/{productoId} {
+        allow read: if true;
+        allow write: if isAuthenticated();
+      }
+    }
+  }
+}

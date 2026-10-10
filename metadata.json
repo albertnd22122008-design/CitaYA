@@ -1,0 +1,8 @@
+{
+  "name": "CitaYa",
+  "description": "Plataforma SaaS para barberías y salones de belleza en República Dominicana. Gestión de citas, CRM, finanzas, inventario y WhatsApp a $0 costo.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,107 @@
+{
+  "entities": {
+    "Negocio": {
+      "path": "negocios/{negocioId}",
+      "description": "Datos principales del negocio o barbería SaaS.",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string", "description": "UID de Firebase Auth del propietario del negocio" },
+        "nombre": { "type": "string" },
+        "telefono": { "type": "string" },
+        "correo": { "type": "string" },
+        "categoria": { "type": "string" },
+        "ciudad": { "type": "string" },
+        "direccion": { "type": "string" },
+        "codigoUnico": { "type": "string" },
+        "plan": { "type": "string", "enum": ["VIP_TRIAL", "GRATIS", "PRO", "VIP"] },
+        "citasUsadasMes": { "type": "number" },
+        "fechaInicioPrueba": { "type": "timestamp" },
+        "fechaFinPrueba": { "type": "timestamp" },
+        "ingresosHoy": { "type": "number" },
+        "balanceNeto": { "type": "number" },
+        "dineroRecibido": { "type": "number" },
+        "dineroEnEspera": { "type": "number" },
+        "gastosMes": { "type": "number" },
+        "tasaOcupacion": { "type": "number" },
+        "tasaAusencias": { "type": "number" },
+        "productividad": { "type": "number" },
+        "creadoEn": { "type": "timestamp" }
+      },
+      "required": ["userId", "nombre", "plan"]
+    },
+    "Cita": {
+      "path": "negocios/{negocioId}/citas/{citaId}",
+      "description": "Cita agendada para el negocio.",
+      "properties": {
+        "id": { "type": "string" },
+        "negocioId": { "type": "string" },
+        "userId": { "type": "string" },
+        "clienteNombre": { "type": "string" },
+        "clienteTelefono": { "type": "string" },
+        "clienteCorreo": { "type": "string" },
+        "barberoId": { "type": "string" },
+        "barberoNombre": { "type": "string" },
+        "servicio": { "type": "string" },
+        "precio": { "type": "number" },
+        "fecha": { "type": "string" },
+        "hora": { "type": "string" },
+        "duracionMinutos": { "type": "number" },
+        "estado": { "type": "string" },
+        "totalCobrado": { "type": "number" },
+        "esWalkIn": { "type": "boolean" },
+        "fechaRegistro": { "type": "timestamp" }
+      },
+      "required": ["negocioId", "userId", "clienteNombre", "servicio", "precio", "hora"]
+    },
+    "Barbero": {
+      "path": "negocios/{negocioId}/barberos/{barberoId}",
+      "description": "Barbero o estilista del negocio.",
+      "properties": {
+        "id": { "type": "string" },
+        "negocioId": { "type": "string" },
+        "userId": { "type": "string" },
+        "nombre": { "type": "string" },
+        "especialidad": { "type": "string" },
+        "activo": { "type": "boolean" },
+        "comisionPorcentaje": { "type": "number" },
+        "citasHoy": { "type": "number" },
+        "ingresosHoy": { "type": "number" },
+        "rating": { "type": "number" }
+      },
+      "required": ["negocioId", "userId", "nombre"]
+    },
+    "Cliente": {
+      "path": "negocios/{negocioId}/clientes/{clienteId}",
+      "description": "Registro de cliente y ficha CRM.",
+      "properties": {
+        "id": { "type": "string" },
+        "negocioId": { "type": "string" },
+        "userId": { "type": "string" },
+        "nombre": { "type": "string" },
+        "correo": { "type": "string" },
+        "telefono": { "type": "string" },
+        "categoria": { "type": "string" },
+        "totalGastado": { "type": "number" },
+        "visitasCount": { "type": "number" },
+        "ultimaVisita": { "type": "string" }
+      },
+      "required": ["negocioId", "userId", "nombre"]
+    },
+    "ProductoInventario": {
+      "path": "negocios/{negocioId}/inventario/{productoId}",
+      "description": "Artículo de inventario para venta en el salón.",
+      "properties": {
+        "id": { "type": "string" },
+        "negocioId": { "type": "string" },
+        "userId": { "type": "string" },
+        "nombre": { "type": "string" },
+        "categoria": { "type": "string" },
+        "precioVenta": { "type": "number" },
+        "costo": { "type": "number" },
+        "stock": { "type": "number" },
+        "stockMinimo": { "type": "number" }
+      },
+      "required": ["negocioId", "userId", "nombre", "precioVenta", "stock"]
+    }
+  }
+}
